@@ -108,17 +108,7 @@ export async function main(): Promise<void> {
     }
   }
 
-  if (!is_merge_request) {
-    logger.info('Not a Pull Request. Nothing to do...')
-    return
-  }
-
-  const merge_request_iid = parseInt(CI_MERGE_REQUEST_IID, 10)
-
-  logger.info(`Connecting to GitLab: ${CI_SERVER_URL}`)
-
-  let project = await gitlabGetProject(CI_SERVER_URL, GITLAB_TOKEN, CI_PROJECT_ID)
-  logger.debug(`Project=${project.name}`)
+  // Collect all Coverity data and generate optional GitLab Security dashboard before interacting with GitLab
 
   // TODO validate file exists and is .json?
   const jsonV7Content = fs.readFileSync(coverity_results_file)
@@ -143,6 +133,38 @@ export async function main(): Promise<void> {
       }
     }
   }
+
+  if (options.gitlabSecurity) {
+    logger.info(`Generating GitLab Security Dashboard output: ${GITLAB_SECURITY_DASHBOARD_SAST_FILE}`)
+    let gitlab_json = gitlab_initialize_coverity_json()
+    for (const issue of coverityIssues.issues) {
+      const projectIssue = mergeKeyToIssue.get(issue.mergeKey)
+      let cid_url = undefined
+      if (projectIssue) {
+        cid_url = `${COVERITY_URL}/query/defects.htm?project=${COVERITY_PROJECT}&cid=${projectIssue.cid}`
+      } else {
+        cid_url = ''
+      }
+
+      gitlab_json.vulnerabilities.push(gitlab_get_coverity_json_vulnerability(issue, cid_url))
+    }
+
+    fs.writeFileSync(GITLAB_SECURITY_DASHBOARD_SAST_FILE, JSON.stringify(gitlab_json, null, 2), 'utf8')
+  }
+
+  if (!is_merge_request) {
+    logger.info('Not a Pull Request, nothing else to do.')
+    return
+  }
+
+  const merge_request_iid = parseInt(CI_MERGE_REQUEST_IID, 10)
+
+  logger.info(`Connecting to GitLab: ${CI_SERVER_URL}`)
+
+  let project = await gitlabGetProject(CI_SERVER_URL, GITLAB_TOKEN, CI_PROJECT_ID)
+  logger.debug(`Project=${project.name}`)
+
+
 
   const review_discussions = await gitlabGetDiscussions(CI_SERVER_URL, GITLAB_TOKEN, CI_PROJECT_ID, merge_request_iid).
     then(discussions => discussions.filter(discussion => discussion.notes![0].body.includes(COVERITY_COMMENT_PREFACE)))
@@ -234,24 +256,6 @@ export async function main(): Promise<void> {
             logger.error(`Unable to update note #${discussion.notes![0].id}: ${error.message}`)
       })
     }
-  }
-
-  if (options.gitlabSecurity) {
-    logger.info(`Generating GitLab Security Dashboard output: ${GITLAB_SECURITY_DASHBOARD_SAST_FILE}`)
-    let gitlab_json = gitlab_initialize_coverity_json()
-    for (const issue of coverityIssues.issues) {
-      const projectIssue = mergeKeyToIssue.get(issue.mergeKey)
-      let cid_url = undefined
-      if (projectIssue) {
-        cid_url = `${COVERITY_URL}/query/defects.htm?project=${COVERITY_PROJECT}&cid=${projectIssue.cid}`
-      } else {
-        cid_url = ''
-      }
-
-      gitlab_json.vulnerabilities.push(gitlab_get_coverity_json_vulnerability(issue, cid_url))
-    }
-
-    fs.writeFileSync(GITLAB_SECURITY_DASHBOARD_SAST_FILE, JSON.stringify(gitlab_json, null, 2), 'utf8')
   }
 
   logger.info(`Found ${coverityIssues.issues.length} Coverity issues.`)
