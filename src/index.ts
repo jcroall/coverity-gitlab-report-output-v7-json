@@ -270,6 +270,7 @@ export async function main(): Promise<void> {
 function gitlab_get_coverity_json_vulnerability(issue: CoverityIssueOccurrence, cid_url: string) : any {
   let json_vlun = {
     id: issue.mergeKey,
+    cve: issue.mergeKey,
     category: "sast",
     name: issue.checkerProperties?.subcategoryShortDescription,
     message: issue.checkerProperties?.subcategoryShortDescription,
@@ -284,15 +285,15 @@ function gitlab_get_coverity_json_vulnerability(issue: CoverityIssueOccurrence, 
       file: issue.strippedMainEventFilePathname,
       start_line: issue.mainEventLineNumber,
       end_line: issue.mainEventLineNumber,
-      class: issue.functionDisplayName,
-      method: issue.functionDisplayName
+      class: issue.functionDisplayName ? issue.functionDisplayName : "",
+      method: issue.functionDisplayName ? issue.functionDisplayName : ""
     },
     identifiers: [
       {
         type: "synopsys_coverity_type",
         name: `Coverity ${issue.checkerName}`,
         value: issue.checkerName,
-        url: ''
+        url: (cid_url && cid_url.length > 0) ? cid_url : "http://url-not-available-for-this-issue"
       }
     ]
   }
