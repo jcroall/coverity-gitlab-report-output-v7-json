@@ -290,7 +290,7 @@ function gitlab_get_coverity_json_vulnerability(issue: CoverityIssueOccurrence, 
     identifiers: [
       {
         type: "synopsys_coverity_type",
-        name: `Coverity`,
+        name: `Coverity ${issue.checkerName}`,
         value: issue.checkerName,
         url: ''
       }
