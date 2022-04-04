@@ -19,7 +19,7 @@ import {
 
 import {logger} from "@jcroall/synopsys-sig-node/lib";
 import * as fs from "fs";
-import {relatavize_path} from "@jcroall/synopsys-sig-node/lib/path";
+import {relatavize_path} from "@jcroall/synopsys-sig-node/lib/paths";
 import {gitlabCreateDiscussionWithoutPosition} from "@jcroall/synopsys-sig-node/lib/gitlab/discussions";
 
 const chalk = require('chalk')
