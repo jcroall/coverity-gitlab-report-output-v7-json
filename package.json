@@ -1,5 +1,5 @@
 {
-  "name": "@jcroall/coverity-gitlab-report-output-v7-json",
+  "name": "coverity-gitlab-report-output-v7-json",
   "description": "Integrate Synopsys Coverity Static Analysis Results Into GitLab",
   "license": "Apache-2.0",
   "author": "James Croall",
