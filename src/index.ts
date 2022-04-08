@@ -40,7 +40,8 @@ export async function main(): Promise<void> {
       .option('-u, --coverity-url <Coverity URL>', 'Location of the Coverity server')
       .option('-p, --coverity-project <Coverity Project Name>', 'Name of Coverity project')
       .option('-g, --gitlab-security', 'Generate GitLab Security Dashboard output')
-      .option('-d, --debug', 'Enable debug mode (extra verbosity)')
+      .option('-d, --debug', 'Enable debug mode')
+      .option('-d, --debug-extra', 'Enable debug mode (extra verbosity)')
       .parse(process.argv)
 
   const options = program.opts()
@@ -74,9 +75,9 @@ export async function main(): Promise<void> {
     program.outputHelp()
   }
 
-  if (options.debug) {
+  if (options.debugExtra) {
     logger.level = 'debug'
-    logger.debug(`Enabled debug mode`)
+    logger.debug(`Enabled debug (extra) mode`)
   }
 
   const GITLAB_TOKEN = process.env['GITLAB_TOKEN']
