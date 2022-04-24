@@ -181,7 +181,7 @@ export async function main(): Promise<void> {
     for (const issue of coverityIssues.issues) {
       const is_already_exported = coverity_mks_exported.get(issue.mergeKey)
 
-      if (!coverity_mk_to_gitlab_issues.get(issue.mergeKey) && (is_already_exported != undefined && is_already_exported > 0)) {
+      if (!coverity_mk_to_gitlab_issues.get(issue.mergeKey) && !is_already_exported) {
         let issueBody = coverityCreateIssue(issue)
 
         const projectIssue = mergeKeyToIssue.get(issue.mergeKey)
