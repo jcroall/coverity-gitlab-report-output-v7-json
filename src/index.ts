@@ -133,6 +133,10 @@ export async function main(): Promise<void> {
         logger.error(error as string | Error)
         process.exit(1)
       }
+      let keys = Array.from(mergeKeyToIssue.keys())
+      for (const mk of keys) {
+        logger.debug(`Got Coverity issue ${mk} from server`)
+      }
     }
   }
 
@@ -154,8 +158,9 @@ export async function main(): Promise<void> {
     fs.writeFileSync(GITLAB_SECURITY_DASHBOARD_SAST_FILE, JSON.stringify(gitlab_json, null, 2), 'utf8')
   }
 
-  let coverity_mk_to_gitlab_issues = new Map<string, IssueSchema>()
   if (!is_merge_request && options.createIssues) {
+    let coverity_mk_to_gitlab_issues = new Map<string, IssueSchema>()
+
     logger.info(`Get list of GitLab Issues`)
     const gitlab_issues = await gitlabGetIssues(CI_SERVER_URL, GITLAB_TOKEN, CI_PROJECT_ID, "Coverity")
         .catch(error => {
@@ -171,28 +176,31 @@ export async function main(): Promise<void> {
       }
     }
 
-    if (options.createIssues) {
-      let coverity_mks_exported = new Map<string, boolean>()
+    let coverity_mks_exported = new Map<string, number>()
 
-      for (const issue of coverityIssues.issues) {
-        if (!coverity_mk_to_gitlab_issues.get(issue.mergeKey) && !(coverity_mks_exported.get(issue.mergeKey) == false)) {
-          let issueBody = coverityCreateIssue(issue)
+    for (const issue of coverityIssues.issues) {
+      const is_already_exported = coverity_mks_exported.get(issue.mergeKey)
 
-          const projectIssue = mergeKeyToIssue.get(issue.mergeKey)
-          if (projectIssue) {
-            issueBody += `[See the issue in Coverity Connect](${COVERITY_URL}/query/defects.htm?project=${COVERITY_PROJECT}&cid=${projectIssue.cid})`
-          }
+      if (!coverity_mk_to_gitlab_issues.get(issue.mergeKey) && (is_already_exported != undefined && is_already_exported > 0)) {
+        let issueBody = coverityCreateIssue(issue)
 
-          const new_gitlab_issue_id = await gitlabCreateIssue(CI_SERVER_URL, GITLAB_TOKEN, CI_PROJECT_ID,
-              `Coverity: ${issue.checkerName} in ${issue.strippedMainEventFilePathname}`,
-              issueBody
-          ).catch(error => {
-            logger.error(`Unable to get create GitLab issue: ${error.message}`)
-          })
-          if (new_gitlab_issue_id) {
-            logger.info(`Created GitLab issue ${new_gitlab_issue_id} for Coverity issue ${issue.mergeKey}`)
-            coverity_mks_exported.set(issue.mergeKey, true)
-          }
+        const projectIssue = mergeKeyToIssue.get(issue.mergeKey)
+        if (projectIssue) {
+          issueBody += `[See the issue in Coverity Connect](${COVERITY_URL}/query/defects.htm?project=${COVERITY_PROJECT}&cid=${projectIssue.cid})`
+          logger.debug(`Found URL for issue`)
+        } else {
+          logger.debug(`Coudln't find URL for issue`)
+        }
+
+        const new_gitlab_issue_id = await gitlabCreateIssue(CI_SERVER_URL, GITLAB_TOKEN, CI_PROJECT_ID,
+            `Coverity: ${issue.checkerName} in ${issue.strippedMainEventFilePathname}`,
+            issueBody
+        ).catch(error => {
+          logger.error(`Unable to get create GitLab issue: ${error.message}`)
+        })
+        if (new_gitlab_issue_id) {
+          logger.info(`Created GitLab issue ${new_gitlab_issue_id} for Coverity issue ${issue.mergeKey}`)
+          coverity_mks_exported.set(issue.mergeKey, new_gitlab_issue_id)
         }
       }
     }
