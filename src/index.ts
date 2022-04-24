@@ -173,7 +173,9 @@ export async function main(): Promise<void> {
 
     for (const issue of coverityIssues.issues) {
       if (options.createIssues) {
-        if (!coverity_mk_to_gitlab_issues.get(issue.mergeKey)) {
+        let coverity_mks_exported = new Map<string, boolean>()
+
+        if (!coverity_mk_to_gitlab_issues.get(issue.mergeKey) && !coverity_mks_exported.get(issue.mergeKey)) {
           const issueBody = coverityCreateIssue(issue)
           const new_gitlab_issue_id = await gitlabCreateIssue(CI_SERVER_URL, GITLAB_TOKEN, CI_PROJECT_ID,
               `Coverity: ${issue.checkerName} in ${issue.strippedMainEventFilePathname}`,
@@ -183,6 +185,7 @@ export async function main(): Promise<void> {
           })
           if (new_gitlab_issue_id) {
             logger.info(`Created GitLab issue ${new_gitlab_issue_id} for Coverity issue ${issue.mergeKey}`)
+            coverity_mks_exported.set(issue.mergeKey, true)
           }
         }
       }
