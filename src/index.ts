@@ -169,10 +169,11 @@ export async function main(): Promise<void> {
     })
     if (gitlab_issues) {
       for (const gitlab_issue of gitlab_issues) {
+        //if (gitlab_issue.state == "closed") { continue }
         const coverity_merge_key = gitlab_issue.description.match(/<!-- Coverity Issue (................................) -->/)
         if (coverity_merge_key && coverity_merge_key[1]) {
           coverity_mk_to_gitlab_issues.set(coverity_merge_key[1], gitlab_issue)
-          logger.debug(`Found GitLab issue ${gitlab_issue.iid} for Coverity issue ${coverity_merge_key[1]}`)
+          logger.debug(`Found GitLab issue ${gitlab_issue.iid} for Coverity issue ${coverity_merge_key[1]}: ${gitlab_issue.title}`)
         }
       }
     }
@@ -211,6 +212,7 @@ export async function main(): Promise<void> {
       for (const key of keys) {
         const value = coverity_mk_to_gitlab_issues.get(key)
         if (value) {
+          //if (value.state == "closed") { continue }
           if (!mergeKeyToIssue.has(key)) {
             logger.info(`Coverity issue ${key} no longer present on server, closing GitLab ticket ${value.iid}`)
             await gitlabCloseIssue(CI_SERVER_URL, GITLAB_TOKEN, CI_PROJECT_ID, value.iid)
