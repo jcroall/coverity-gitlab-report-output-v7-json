@@ -3,7 +3,7 @@
   "description": "Integrate Synopsys Coverity Static Analysis Results Into GitLab",
   "license": "Apache-2.0",
   "author": "James Croall",
-  "version": "0.1.13-beta.5",
+  "version": "0.1.13-beta.6",
   "main": "lib/index.js",
   "bin": {
     "coverity-gitlab-report-output-v7-json": "bin/coverity-gitlab-report-output-v7-json"
