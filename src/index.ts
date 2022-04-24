@@ -147,7 +147,7 @@ export async function main(): Promise<void> {
       const projectIssue = mergeKeyToIssue.get(issue.mergeKey)
       let cid_url = undefined
       if (projectIssue) {
-        cid_url = `${COVERITY_URL}/query/defects.htm?project=${COVERITY_PROJECT}&cid=${projectIssue.cid}`
+        cid_url = `${COVERITY_URL}/query/defects.htm?project=${coverity_project_name}&cid=${projectIssue.cid}`
       } else {
         cid_url = ''
       }
@@ -186,7 +186,7 @@ export async function main(): Promise<void> {
 
         const projectIssue = mergeKeyToIssue.get(issue.mergeKey)
         if (projectIssue) {
-          issueBody += `[See the issue in Coverity Connect](${COVERITY_URL}/query/defects.htm?project=${COVERITY_PROJECT}&cid=${projectIssue.cid})`
+          issueBody += `[See the issue in Coverity Connect](${COVERITY_URL}/query/defects.htm?project=${coverity_project_name}&cid=${projectIssue.cid})`
           logger.debug(`Found URL for issue`)
         } else {
           logger.debug(`Coudln't find URL for issue`)
