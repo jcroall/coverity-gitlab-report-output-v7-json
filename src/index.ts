@@ -175,7 +175,7 @@ export async function main(): Promise<void> {
       let coverity_mks_exported = new Map<string, boolean>()
 
       for (const issue of coverityIssues.issues) {
-        if (!coverity_mk_to_gitlab_issues.get(issue.mergeKey) && !coverity_mks_exported.get(issue.mergeKey)) {
+        if (!coverity_mk_to_gitlab_issues.get(issue.mergeKey) && !(coverity_mks_exported.get(issue.mergeKey) == false)) {
           let issueBody = coverityCreateIssue(issue)
 
           const projectIssue = mergeKeyToIssue.get(issue.mergeKey)
