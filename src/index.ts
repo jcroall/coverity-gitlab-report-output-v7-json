@@ -67,6 +67,7 @@ export async function main(): Promise<void> {
     logger.error(`Must specify Coverity Project in arguments or environment`)
     process.exit(1)
   }
+  logger.debug(`Coverity project name: ${coverity_project_name}`)
 
   const coverity_results_file: string = undefined === options.json
       ? 'coverity-results.json'
@@ -127,6 +128,7 @@ export async function main(): Promise<void> {
 
     if (canCheckCoverity && coverityIssues && coverityIssues.issues.length > 0) {
       try {
+        logger.debug(`Coverity project name=${coverity_project_name}`)
         mergeKeyToIssue = await coverityMapMatchingMergeKeys(coverity_url, COV_USER, COVERITY_PASSPHRASE,
             coverity_project_name, allUniqueMergeKeys)
       } catch (error: any) {
@@ -180,6 +182,7 @@ export async function main(): Promise<void> {
 
     for (const issue of coverityIssues.issues) {
       const is_already_exported = coverity_mks_exported.get(issue.mergeKey)
+
 
       if (!coverity_mk_to_gitlab_issues.get(issue.mergeKey) && !is_already_exported) {
         let issueBody = coverityCreateIssue(issue)
