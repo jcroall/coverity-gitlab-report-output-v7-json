@@ -173,7 +173,7 @@ export async function main(): Promise<void> {
         const coverity_merge_key = gitlab_issue.description.match(/<!-- Coverity Issue (................................) -->/)
         if (coverity_merge_key && coverity_merge_key[1]) {
           coverity_mk_to_gitlab_issues.set(coverity_merge_key[1], gitlab_issue)
-          logger.debug(`Found GitLab issue ${gitlab_issue.iid} for Coverity issue ${coverity_merge_key[1]}: ${gitlab_issue.title}`)
+          logger.debug(`Found GitLab issue ${gitlab_issue.iid} for Coverity issue ${coverity_merge_key[1]}: ${gitlab_issue.title}: ${gitlab_issue.state}`)
         }
       }
     }
