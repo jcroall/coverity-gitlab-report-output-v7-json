@@ -171,12 +171,18 @@ export async function main(): Promise<void> {
       }
     }
 
-    for (const issue of coverityIssues.issues) {
-      if (options.createIssues) {
-        let coverity_mks_exported = new Map<string, boolean>()
+    if (options.createIssues) {
+      let coverity_mks_exported = new Map<string, boolean>()
 
+      for (const issue of coverityIssues.issues) {
         if (!coverity_mk_to_gitlab_issues.get(issue.mergeKey) && !coverity_mks_exported.get(issue.mergeKey)) {
-          const issueBody = coverityCreateIssue(issue)
+          let issueBody = coverityCreateIssue(issue)
+
+          const projectIssue = mergeKeyToIssue.get(issue.mergeKey)
+          if (projectIssue) {
+            issueBody += `[See the issue in Coverity Connect](${COVERITY_URL}/query/defects.htm?project=${COVERITY_PROJECT}&cid=${projectIssue.cid})`
+          }
+
           const new_gitlab_issue_id = await gitlabCreateIssue(CI_SERVER_URL, GITLAB_TOKEN, CI_PROJECT_ID,
               `Coverity: ${issue.checkerName} in ${issue.strippedMainEventFilePathname}`,
               issueBody
