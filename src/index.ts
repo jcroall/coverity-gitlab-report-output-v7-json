@@ -67,7 +67,6 @@ export async function main(): Promise<void> {
     logger.error(`Must specify Coverity Project in arguments or environment`)
     process.exit(1)
   }
-  logger.debug(`Coverity project name: ${coverity_project_name}`)
 
   const coverity_results_file: string = undefined === options.json
       ? 'coverity-results.json'
@@ -173,7 +172,7 @@ export async function main(): Promise<void> {
         const coverity_merge_key = gitlab_issue.description.match(/<!-- Coverity Issue (................................) -->/)
         if (coverity_merge_key && coverity_merge_key[1]) {
           coverity_mk_to_gitlab_issues.set(coverity_merge_key[1], gitlab_issue)
-          logger.info(`Found GitLab issue ${gitlab_issue.iid} for Coverity issue ${coverity_merge_key[1]}`)
+          logger.debug(`Found GitLab issue ${gitlab_issue.iid} for Coverity issue ${coverity_merge_key[1]}`)
         }
       }
     }
@@ -183,16 +182,14 @@ export async function main(): Promise<void> {
     for (const issue of coverityIssues.issues) {
       const is_already_exported = coverity_mks_exported.get(issue.mergeKey)
 
-
       if (!coverity_mk_to_gitlab_issues.get(issue.mergeKey) && !is_already_exported) {
         let issueBody = coverityCreateIssue(issue)
 
         const projectIssue = mergeKeyToIssue.get(issue.mergeKey)
         if (projectIssue) {
           issueBody += `[See the issue in Coverity Connect](${COVERITY_URL}/query/defects.htm?project=${coverity_project_name}&cid=${projectIssue.cid})`
-          logger.debug(`Found URL for issue`)
         } else {
-          logger.debug(`Coudln't find URL for issue`)
+          issueBody += `No link available to Coverity Connect`
         }
 
         const new_gitlab_issue_id = await gitlabCreateIssue(CI_SERVER_URL, GITLAB_TOKEN, CI_PROJECT_ID,
