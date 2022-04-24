@@ -23,7 +23,6 @@
   },
   "dependencies": {
     "@gitbeaker/node": "^35.4.0",
-    "@jcroall/synopsys-sig-node": "file:../synopsys-sig-node",
     "axios": "^0.26.1",
     "chalk": "^4.1.0",
     "clear": "^0.1.0",
@@ -32,6 +31,7 @@
     "got": "^12.0.1",
     "ky": "^0.30.0",
     "path": "^0.12.7",
+    "synopsys-sig-node": "^1.1.70-beta.0",
     "uuid": "^8.3.2"
   },
   "devDependencies": {

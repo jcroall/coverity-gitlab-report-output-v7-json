@@ -18,166 +18,17 @@ import {
   coverityCreateNoLongerPresentMessage,
   CoverityIssueOccurrence,
   logger,
-  relatavize_path
-} from "@jcroall/synopsys-sig-node/lib/"
+  relatavize_path, coverityCreateIssue
+} from "synopsys-sig-node/lib/"
 
 import * as fs from "fs";
-import {Gitlab} from "@gitbeaker/node";
 import {IssueSchema} from "@gitbeaker/core/dist/types/resources/Issues";
+import {gitlabCloseIssue, gitlabCreateIssue, gitlabGetIssues} from "synopsys-sig-node/lib";
 const chalk = require('chalk')
 const figlet = require('figlet')
 const program = require('commander')
 
 const GITLAB_SECURITY_DASHBOARD_SAST_FILE = "synopsys-gitlab-sast.json"
-
-export function coverityCreateIssue(issue: CoverityIssueOccurrence): string {
-  const issueName = issue.checkerProperties ? issue.checkerProperties.subcategoryShortDescription : issue.checkerName
-  const checkerNameString = issue.checkerProperties ? `\r\n_${issue.checkerName}_` : ''
-  const impactString = issue.checkerProperties ? issue.checkerProperties.impact : 'Unknown'
-  const cweString = issue.checkerProperties ? `, CWE-${issue.checkerProperties.cweCategory}` : ''
-  const mainEvent = issue.events.find(event => event.main)
-  const mainEventDescription = mainEvent ? mainEvent.eventDescription : ''
-  const remediationEvent = issue.events.find(event => event.remediation)
-  const remediationString = remediationEvent ? `## How to fix\r\n ${remediationEvent.eventDescription}` : ''
-  const issue_evidence = coverityCreateIssueEvidence(issue)
-
-  return `<!-- Coverity Issue ${issue.mergeKey} -->
-# Coverity Issue - ${issueName}
-${mainEventDescription}
-
-_${impactString} Impact${cweString}_ ${checkerNameString}
-
-${remediationString}
-
-${issue_evidence}
-`
-}
-
-function get_line(filename: string, line_no: number): string {
-  const data = fs.readFileSync(filename, 'utf8');
-  const lines = data.split('\n');
-
-  if (+line_no > lines.length) {
-    throw new Error('File end reached without finding line')
-  }
-
-  return lines[+line_no]
-}
-
-export async function gitlabGetIssues(gitlab_url: string, gitlab_token: string, project_id: string,
-                                      title_search: string): Promise<Array<IssueSchema>> {
-  const api = new Gitlab({host: gitlab_url, token: gitlab_token})
-  // GitBeaker returns a relatively awkward data structure, so we will return a more convenient one
-  let return_issues = Array()
-
-  let issues = await api.Issues.all({
-    projectId: project_id,
-    options: {
-      search: title_search
-    }
-  })
-
-  for (const issue of issues) {
-    // TODO: The title search does not seem to work above, implement here
-    let title = issue.title as string
-    if (title.includes(title_search)) {
-      logger.debug(`GitLab Issue with title: ${issue.title} description: ${issue.description}`)
-      return_issues.push(issue)
-    }
-  }
-
-  return return_issues
-}
-
-export async function gitlabCreateIssue(gitlab_url: string, gitlab_token: string, project_id: string, title: string,
-                                        description: string): Promise<number> {
-  const api = new Gitlab({host: gitlab_url, token: gitlab_token})
-
-  let new_issue = await api.Issues.create(project_id, {
-    title: title,
-    description: description,
-    issue_type: "issue"
-  })
-
-  return new_issue.iid
-}
-
-export async function gitlabCloseIssue(gitlab_url: string, gitlab_token: string, project_id: string,
-                                       issue_id: number): Promise<void> {
-  const api = new Gitlab({host: gitlab_url, token: gitlab_token})
-
-  await api.Issues.edit(project_id, issue_id, {
-    state_event: "close"
-  })
-
-  return
-}
-
-export function coverityCreateIssueEvidence(issue: CoverityIssueOccurrence) {
-  // Will create a map from files to lines to list of events and code snippets
-  let event_tree_lines = new Map<string, Map<number, number>>()
-  let event_tree_events = new Map<string, Map<number, Array<string>>>()
-  let evidence = ''
-
-  // Loop through each event and collect source code artifacts
-  for (const event of issue.events) {
-    const event_file = event.strippedFilePathname
-    const event_line = event.lineNumber
-
-    //logger.info(`Event file=${event_file} line=${event_line} ${event.eventNumber}`)
-    if (!event_tree_lines.get(event_file)) {
-      event_tree_lines.set(event_file, new Map<number, number>())
-      event_tree_events.set(event_file, new Map<number, Array<string>>())
-    }
-
-    // Collect +/- 3 lines of code
-    let event_line_start = event_line - 3
-    if (event_line_start < 0) {
-      event_line_start = 0
-    }
-    let event_line_end = event_line + 3
-
-    for (let i = event_line_start; i < event_line_end; i ++) {
-      if (!event_tree_lines.get(event_file)) { logger.debug(`Not set!`) }
-      event_tree_lines.get(event_file)?.set(i, 1)
-    }
-
-    if (!event_tree_events.get(event_file)?.get(event_line)) {
-      event_tree_events.get(event_file)?.set(event_line, [])
-    }
-    event_tree_events.get(event_file)?.get(event_line)?.push(
-        `${event.eventNumber}. ${event.eventTag}: ${event.eventDescription}`)
-    //logger.debug(`Push: ${event.eventNumber}. ${event.eventTag}: ${event.eventDescription}`)
-  }
-
-  let keys = Array.from( event_tree_lines.keys() );
-  for (const filename of keys) {
-    evidence += `\n**From ${filename}:**\n\n`
-    evidence += "```\n"
-
-    const event_to_lines = event_tree_lines.get(filename)
-    if (event_to_lines) {
-      let keys = Array.from(event_to_lines.keys())
-      for (const i of keys) {
-        if (event_tree_events.get(filename)?.has(i)) {
-          let events_and_lines = event_tree_events.get(filename)?.get(i)
-          if (events_and_lines) {
-            for (const event_str of events_and_lines) {
-              evidence += `${event_str}\n`
-            }
-          }
-        }
-
-        const code_line = get_line(filename, i)
-        const line_string = i.toString().padStart(5, '0')
-        evidence += `${line_string} ${code_line}\n`
-      }
-    }
-  }
-  evidence += "```\n"
-
-  return evidence
-}
 
 export async function main(): Promise<void> {
   console.log(
@@ -194,7 +45,6 @@ export async function main(): Promise<void> {
       .option('-i, --create-issues', 'Create issues for security findings')
       .option('-i, --do-not-close-issues', 'Do not close issues when they are fixed')
       .option('-d, --debug', 'Enable debug mode')
-      .option('-d, --debug-extra', 'Enable debug mode (extra verbosity)')
       .parse(process.argv)
 
   const options = program.opts()
@@ -228,9 +78,9 @@ export async function main(): Promise<void> {
     program.outputHelp()
   }
 
-  if (options.debugExtra) {
+  if (options.debug) {
     logger.level = 'debug'
-    logger.debug(`Enabled debug (extra) mode`)
+    logger.debug(`Enabled debug mode`)
   }
 
   const GITLAB_TOKEN = process.env['GITLAB_TOKEN']
