@@ -6,6 +6,7 @@ import {
   gitlabGetDiscussions,
   gitlabGetProject,
   gitlabUpdateNote,
+  gitlabCreateDiscussionWithoutPosition,
   CoverityIssuesView,
   CoverityProjectIssue,
   coverityMapMatchingMergeKeys,
@@ -14,19 +15,169 @@ import {
   COVERITY_COMMENT_PREFACE,
   coverityIsInDiff,
   coverityIsPresent,
-  coverityCreateNoLongerPresentMessage, CoverityIssueOccurrence
+  coverityCreateNoLongerPresentMessage,
+  CoverityIssueOccurrence,
+  logger,
+  relatavize_path
 } from "@jcroall/synopsys-sig-node/lib/"
 
-import {logger} from "@jcroall/synopsys-sig-node/lib";
 import * as fs from "fs";
-import {relatavize_path} from "@jcroall/synopsys-sig-node/lib/paths";
-import {gitlabCreateDiscussionWithoutPosition} from "@jcroall/synopsys-sig-node/lib/gitlab/discussions";
-
+import {Gitlab} from "@gitbeaker/node";
+import {IssueSchema} from "@gitbeaker/core/dist/types/resources/Issues";
 const chalk = require('chalk')
 const figlet = require('figlet')
 const program = require('commander')
 
 const GITLAB_SECURITY_DASHBOARD_SAST_FILE = "synopsys-gitlab-sast.json"
+
+export function coverityCreateIssue(issue: CoverityIssueOccurrence): string {
+  const issueName = issue.checkerProperties ? issue.checkerProperties.subcategoryShortDescription : issue.checkerName
+  const checkerNameString = issue.checkerProperties ? `\r\n_${issue.checkerName}_` : ''
+  const impactString = issue.checkerProperties ? issue.checkerProperties.impact : 'Unknown'
+  const cweString = issue.checkerProperties ? `, CWE-${issue.checkerProperties.cweCategory}` : ''
+  const mainEvent = issue.events.find(event => event.main)
+  const mainEventDescription = mainEvent ? mainEvent.eventDescription : ''
+  const remediationEvent = issue.events.find(event => event.remediation)
+  const remediationString = remediationEvent ? `## How to fix\r\n ${remediationEvent.eventDescription}` : ''
+  const issue_evidence = coverityCreateIssueEvidence(issue)
+
+  return `<!-- Coverity Issue ${issue.mergeKey} -->
+# Coverity Issue - ${issueName}
+${mainEventDescription}
+
+_${impactString} Impact${cweString}_ ${checkerNameString}
+
+${remediationString}
+
+${issue_evidence}
+`
+}
+
+function get_line(filename: string, line_no: number): string {
+  const data = fs.readFileSync(filename, 'utf8');
+  const lines = data.split('\n');
+
+  if (+line_no > lines.length) {
+    throw new Error('File end reached without finding line')
+  }
+
+  return lines[+line_no]
+}
+
+export async function gitlabGetIssues(gitlab_url: string, gitlab_token: string, project_id: string,
+                                      title_search: string): Promise<Array<IssueSchema>> {
+  const api = new Gitlab({host: gitlab_url, token: gitlab_token})
+  // GitBeaker returns a relatively awkward data structure, so we will return a more convenient one
+  let return_issues = Array()
+
+  let issues = await api.Issues.all({
+    projectId: project_id,
+    options: {
+      search: title_search
+    }
+  })
+
+  for (const issue of issues) {
+    // TODO: The title search does not seem to work above, implement here
+    let title = issue.title as string
+    if (title.includes(title_search)) {
+      logger.debug(`GitLab Issue with title: ${issue.title} description: ${issue.description}`)
+      return_issues.push(issue)
+    }
+  }
+
+  return return_issues
+}
+
+export async function gitlabCreateIssue(gitlab_url: string, gitlab_token: string, project_id: string, title: string,
+                                        description: string): Promise<number> {
+  const api = new Gitlab({host: gitlab_url, token: gitlab_token})
+
+  let new_issue = await api.Issues.create(project_id, {
+    title: title,
+    description: description,
+    issue_type: "issue"
+  })
+
+  return new_issue.iid
+}
+
+export async function gitlabCloseIssue(gitlab_url: string, gitlab_token: string, project_id: string,
+                                       issue_id: number): Promise<void> {
+  const api = new Gitlab({host: gitlab_url, token: gitlab_token})
+
+  await api.Issues.edit(project_id, issue_id, {
+    state_event: "close"
+  })
+
+  return
+}
+
+export function coverityCreateIssueEvidence(issue: CoverityIssueOccurrence) {
+  // Will create a map from files to lines to list of events and code snippets
+  let event_tree_lines = new Map<string, Map<number, number>>()
+  let event_tree_events = new Map<string, Map<number, Array<string>>>()
+  let evidence = ''
+
+  // Loop through each event and collect source code artifacts
+  for (const event of issue.events) {
+    const event_file = event.strippedFilePathname
+    const event_line = event.lineNumber
+
+    //logger.info(`Event file=${event_file} line=${event_line} ${event.eventNumber}`)
+    if (!event_tree_lines.get(event_file)) {
+      event_tree_lines.set(event_file, new Map<number, number>())
+      event_tree_events.set(event_file, new Map<number, Array<string>>())
+    }
+
+    // Collect +/- 3 lines of code
+    let event_line_start = event_line - 3
+    if (event_line_start < 0) {
+      event_line_start = 0
+    }
+    let event_line_end = event_line + 3
+
+    for (let i = event_line_start; i < event_line_end; i ++) {
+      if (!event_tree_lines.get(event_file)) { logger.debug(`Not set!`) }
+      event_tree_lines.get(event_file)?.set(i, 1)
+    }
+
+    if (!event_tree_events.get(event_file)?.get(event_line)) {
+      event_tree_events.get(event_file)?.set(event_line, [])
+    }
+    event_tree_events.get(event_file)?.get(event_line)?.push(
+        `${event.eventNumber}. ${event.eventTag}: ${event.eventDescription}`)
+    //logger.debug(`Push: ${event.eventNumber}. ${event.eventTag}: ${event.eventDescription}`)
+  }
+
+  let keys = Array.from( event_tree_lines.keys() );
+  for (const filename of keys) {
+    evidence += `\n**From ${filename}:**\n\n`
+    evidence += "```\n"
+
+    const event_to_lines = event_tree_lines.get(filename)
+    if (event_to_lines) {
+      let keys = Array.from(event_to_lines.keys())
+      for (const i of keys) {
+        if (event_tree_events.get(filename)?.has(i)) {
+          let events_and_lines = event_tree_events.get(filename)?.get(i)
+          if (events_and_lines) {
+            for (const event_str of events_and_lines) {
+              evidence += `${event_str}\n`
+            }
+          }
+        }
+
+        const code_line = get_line(filename, i)
+        const line_string = i.toString().padStart(5, '0')
+        evidence += `${line_string} ${code_line}\n`
+      }
+    }
+  }
+  evidence += "```\n"
+
+  return evidence
+}
 
 export async function main(): Promise<void> {
   console.log(
@@ -40,6 +191,8 @@ export async function main(): Promise<void> {
       .option('-u, --coverity-url <Coverity URL>', 'Location of the Coverity server')
       .option('-p, --coverity-project <Coverity Project Name>', 'Name of Coverity project')
       .option('-g, --gitlab-security', 'Generate GitLab Security Dashboard output')
+      .option('-i, --create-issues', 'Create issues for security findings')
+      .option('-i, --do-not-close-issues', 'Do not close issues when they are fixed')
       .option('-d, --debug', 'Enable debug mode')
       .option('-d, --debug-extra', 'Enable debug mode (extra verbosity)')
       .parse(process.argv)
@@ -110,8 +263,6 @@ export async function main(): Promise<void> {
   }
 
   // Collect all Coverity data and generate optional GitLab Security dashboard before interacting with GitLab
-
-  // TODO validate file exists and is .json?
   const jsonV7Content = fs.readFileSync(coverity_results_file)
   const coverityIssues = JSON.parse(jsonV7Content.toString()) as CoverityIssuesView
 
@@ -153,6 +304,57 @@ export async function main(): Promise<void> {
     fs.writeFileSync(GITLAB_SECURITY_DASHBOARD_SAST_FILE, JSON.stringify(gitlab_json, null, 2), 'utf8')
   }
 
+  let coverity_mk_to_gitlab_issues = new Map<string, IssueSchema>()
+  if (!is_merge_request && options.createIssues) {
+    logger.info(`Get list of GitLab Issues`)
+    const gitlab_issues = await gitlabGetIssues(CI_SERVER_URL, GITLAB_TOKEN, CI_PROJECT_ID, "Coverity")
+        .catch(error => {
+      logger.error(`Unable to get GitLab issues: ${error.message}`)
+    })
+    if (gitlab_issues) {
+      for (const gitlab_issue of gitlab_issues) {
+        const coverity_merge_key = gitlab_issue.description.match(/<!-- Coverity Issue (................................) -->/)
+        if (coverity_merge_key && coverity_merge_key[1]) {
+          coverity_mk_to_gitlab_issues.set(coverity_merge_key[1], gitlab_issue)
+          logger.info(`Found GitLab issue ${gitlab_issue.iid} for Coverity issue ${coverity_merge_key[1]}`)
+        }
+      }
+    }
+
+    for (const issue of coverityIssues.issues) {
+      if (options.createIssues) {
+        if (!coverity_mk_to_gitlab_issues.get(issue.mergeKey)) {
+          const issueBody = coverityCreateIssue(issue)
+          const new_gitlab_issue_id = await gitlabCreateIssue(CI_SERVER_URL, GITLAB_TOKEN, CI_PROJECT_ID,
+              `Coverity: ${issue.checkerName} in ${issue.strippedMainEventFilePathname}`,
+              issueBody
+          ).catch(error => {
+            logger.error(`Unable to get create GitLab issue: ${error.message}`)
+          })
+          if (new_gitlab_issue_id) {
+            logger.info(`Created GitLab issue ${new_gitlab_issue_id} for Coverity issue ${issue.mergeKey}`)
+          }
+        }
+      }
+    }
+
+    // Close open tickets if the issue has been resolved
+    if (options.createIssues && !options.doNotCloseIssues) {
+      let keys = Array.from(coverity_mk_to_gitlab_issues.keys())
+      for (const key of keys) {
+        const value = coverity_mk_to_gitlab_issues.get(key)
+        if (value) {
+          if (!mergeKeyToIssue.has(key)) {
+            logger.info(`Coverity issue ${key} no longer present on server, closing GitLab ticket ${value.iid}`)
+            await gitlabCloseIssue(CI_SERVER_URL, GITLAB_TOKEN, CI_PROJECT_ID, value.iid)
+          } else {
+            logger.debug(`Coverity issue ${key} remains on server, leaving GitLab ticket ${value.iid}`)
+          }
+        }
+      }
+    }
+  }
+
   if (!is_merge_request) {
     logger.info('Not a Pull Request, nothing else to do.')
     return
@@ -164,8 +366,6 @@ export async function main(): Promise<void> {
 
   let project = await gitlabGetProject(CI_SERVER_URL, GITLAB_TOKEN, CI_PROJECT_ID)
   logger.debug(`Project=${project.name}`)
-
-
 
   const review_discussions = await gitlabGetDiscussions(CI_SERVER_URL, GITLAB_TOKEN, CI_PROJECT_ID, merge_request_iid).
     then(discussions => discussions.filter(discussion => discussion.notes![0].body.includes(COVERITY_COMMENT_PREFACE)))
@@ -183,7 +383,7 @@ export async function main(): Promise<void> {
       logger.info(`Issue state on server: ignored=${ignoredOnServer}, new=${newOnServer}`)
     }
 
-    const reviewCommentBody = coverityCreateReviewCommentMessage(issue)
+    let reviewCommentBody = coverityCreateReviewCommentMessage(issue)
 
     let path = issue.strippedMainEventFilePathname.startsWith('/') ?
         relatavize_path(process.cwd(), issue.strippedMainEventFilePathname) :
@@ -304,18 +504,17 @@ function gitlab_get_coverity_json_vulnerability(issue: CoverityIssueOccurrence, 
   }
 
   if (issue.checkerProperties?.cweCategory && issue.checkerProperties.cweCategory != "none") {
-    let cwe_identifer = {
+    let cwe_identifier = {
       type: "cwe",
       name: `CWE-${issue.checkerProperties.cweCategory}`,
       value: issue.checkerProperties.cweCategory,
       url: `https://cwe.mitre.org/data/definitions/${issue.checkerProperties.cweCategory}.html`
     }
-    json_vlun.identifiers.push(cwe_identifer)
+    json_vlun.identifiers.push(cwe_identifier)
   }
 
   return(json_vlun)
 }
-
 
 function gitlab_initialize_coverity_json() : any {
   return {
