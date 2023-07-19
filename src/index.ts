@@ -292,7 +292,7 @@ export async function main(): Promise<void> {
         await gitlabUpdateNote(CI_SERVER_URL, GITLAB_TOKEN, CI_PROJECT_ID, merge_request_iid,
             parseInt(existing_comment.id, 10),
             existing_comment.notes![0].id,
-            reviewCommentBody).catch(error => {
+            issueCommentBody).catch(error => {
               logger.error(`Unable to update discussion: ${error.message}`)
         })
       }
